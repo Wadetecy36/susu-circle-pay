@@ -10,8 +10,8 @@ import { toast } from "@/hooks/use-toast";
 
 const operators = [
   { id: "mtn", name: "MTN MoMo", color: "bg-[hsl(48_95%_55%)]", text: "text-[hsl(20_30%_14%)]", logo: "M", enabled: true },
-  { id: "vodafone", name: "Vodafone Cash", color: "bg-[hsl(0_75%_50%)]", text: "text-white", logo: "V", enabled: false },
-  { id: "airteltigo", name: "AirtelTigo Money", color: "bg-[hsl(220_85%_45%)]", text: "text-white", logo: "A", enabled: false },
+  { id: "vodafone", name: "Vodafone Cash", color: "bg-[hsl(0_75%_50%)]", text: "text-white", logo: "V", enabled: true },
+  { id: "airteltigo", name: "AirtelTigo Money", color: "bg-[hsl(220_85%_45%)]", text: "text-white", logo: "A", enabled: true },
 ];
 
 type Stage = "form" | "processing" | "success" | "failed";
@@ -36,7 +36,7 @@ export const MoMoSheet = ({
     }
   }, [open]);
 
-  const fnName = mode === "deposit" ? "momo-deposit" : "momo-withdraw";
+  const fnName = mode === "deposit" ? "paystack-deposit" : "paystack-withdraw";
   const title = mode === "deposit" ? "Top up wallet" : "Withdraw funds";
   const action = mode === "deposit" ? "Receive into wallet" : "Send to mobile money";
 
@@ -48,23 +48,23 @@ export const MoMoSheet = ({
     setStage("processing");
     try {
       const { data, error } = await supabase.functions.invoke(fnName, {
-        body: { amount: amt, phone: phone.replace(/\D/g, "") },
+        body: { amount: amt, phone: phone.replace(/\D/g, ""), operator },
       });
       if (error) throw error;
-      if (!data?.transaction_id) throw new Error("Unexpected response");
+      if (!data?.transaction_id) throw new Error(data?.error ?? "Unexpected response");
 
       // Poll for status
       const txId = data.transaction_id;
       let settled = false;
-      for (let i = 0; i < 20 && !settled; i++) {
+      for (let i = 0; i < 24 && !settled; i++) {
         await new Promise(r => setTimeout(r, 2500));
-        const { data: s } = await supabase.functions.invoke("momo-status", { body: { transaction_id: txId } });
+        const { data: s } = await supabase.functions.invoke("paystack-status", { body: { transaction_id: txId } });
         if (s?.status === "completed") { setStage("success"); settled = true; break; }
         if (s?.status === "failed") { setStage("failed"); setErrorMsg("Payment was not approved"); settled = true; break; }
       }
       if (!settled) {
         setStage("success");
-        toast({ title: "Still processing", description: "We'll update your balance once MTN confirms." });
+        toast({ title: "Still processing", description: "We'll update your balance once Paystack confirms." });
       }
       onSettled?.();
     } catch (e: any) {
@@ -124,7 +124,7 @@ export const MoMoSheet = ({
                 <div className="h-12 px-4 rounded-2xl border border-input bg-card flex items-center font-medium text-sm">🇬🇭 +233</div>
                 <Input id="phone" type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="24 555 0142" className="h-12 rounded-2xl flex-1" />
               </div>
-              <p className="text-[11px] text-muted-foreground mt-1.5">Sandbox tip: use 46733123450 for a successful test.</p>
+              <p className="text-[11px] text-muted-foreground mt-1.5">Test mode: use a real Ghana MoMo number to receive a real PIN prompt.</p>
             </div>
 
             {errorMsg && <div className="text-sm text-destructive">{errorMsg}</div>}
@@ -148,8 +148,8 @@ export const MoMoSheet = ({
             </h3>
             <p className="text-sm text-muted-foreground mt-2">
               {mode === "deposit"
-                ? "We sent an MTN MoMo prompt. Enter your PIN to approve."
-                : "Your withdrawal is being processed by MTN MoMo."}
+                ? "Check your phone for a MoMo prompt and enter your PIN to approve."
+                : "Your withdrawal is being processed."}
             </p>
           </div>
         )}
